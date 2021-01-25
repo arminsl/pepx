@@ -22,7 +22,6 @@
 #define MAXVARPERAA 8
 #define LINELEN 1024
 #define ACLEN 16
-#define MAXQUERYLENGTH 2000000
 //#define BINSIZE 32  // adjust w stats
 #define BINSIZE 16  // adjust w stats, this is becoming a problem, have to reduce to 12 when indexing with variants !
 // optimal binsizes: 2->1000, 3->100, 4->25, 5->10, 6->?
@@ -73,7 +72,7 @@ char currAC[ACLEN];
 char currISO[ACLEN];
 char outputmode[16];
 char linesep[4] = "\n";
-char envstring[MAXQUERYLENGTH];
+char envstring[LINELEN];
 char version[] = "1.72";
 // debug/profiling/stats stuff
 int debug;
@@ -104,7 +103,7 @@ char *code4tenAA(char *currentAC)
     static char *tab[] = {"A A0A024", "B A0A044", "C A0A067", "D A0A075", "E A0A087", "F A0A088", "G A0A096", "H A0A0A0", "I A0A0A6", "J A0A0B4", "K A0A0C3",
                           "L A0A0C4", "M A0A0C5", "N A0A0D2", "O A0A0D5", "P A0A0D9", "Q A0A0E3", "R A0A0G2", "S A0A0H2", "T A0A0J9", "U A0A0K0", "V A0A0M3", "W A0A0N4",
                           "X A0A0R4", "Y A0A0S2", "Z A0A0U1", "a A0A0U5", "b A0A0X1", "c A0A140", "d A0A182", "e A0A1B0", "f A0A1C7", "g A0A1D5", "h A0A1W2", "i A0A286",
-                          "j A0A2R8", "k A0A0K2", "l A0A2Z4", "m A0A494", "n A0A5F9", "o A0A3B3"
+                          "j A0A2R8", "k A0A0K2"
                          };
 
     if(!strncmp(currentAC, "P", 1))
@@ -375,6 +374,7 @@ void pepx_loadall()
     int i, pepcnt, filelen;
     char fname[LINELEN], *ptr, idxpath[128] = "";
     FILE *idx;
+
     if(strlen(indexfolder) > 8)
     {
         strcpy(idxpath, indexfolder);
@@ -382,9 +382,10 @@ void pepx_loadall()
     }
     else if((ptr = getenv("PEPX")) != NULL)
     {
-	strcpy(idxpath, ptr);
+        strcpy(idxpath, ptr);
         strcat(idxpath, "/");
     }
+
     // Check if we've indexed small-mers
     sprintf(fname, "%spepxIL3.idx", idxpath);
     if((idx = fopen(fname, "r")) == NULL)
@@ -394,6 +395,7 @@ void pepx_loadall()
             // Indexed only with 7-mers
             mINPEPSIZE = mAXPEPSIZE = MAXPEPSIZE;
     }
+
     for(i = mINPEPSIZE; i <= mAXPEPSIZE; i++)
     {
         usscnt = 0;
@@ -802,8 +804,6 @@ int is10digits(char *match)
 {
     if(match[0] == 'P' && isalpha(match[1]))
         /*if(!strncmp(match,"PA",2) || !strncmp(match,"PB",2) || !strncmp(match,"PC",2) ||
-	    
-	    
            !strncmp(match,"PD",2) || !strncmp(match,"PE",2) || !strncmp(match,"PF",2) ||
            !strncmp(match,"PG",2) || !strncmp(match,"PH",2) || !strncmp(match,"PI",2)) */
         return(1);
@@ -872,8 +872,6 @@ void  pepx_displaymatches(char matches[][ACLEN + 4] , int nbmatch, char *orgquer
             if(json)
             {
                 strcpy(ac, matches[i]);
-                if(!strchr(matches[i], '-')) // it can happen that after qsort, element 0 is empty: investigate with AAAAAA
-                  continue;
                 *strchr(ac, '-') = 0;
                 if(strcmp(ac, lastac))
                 {
@@ -1206,7 +1204,7 @@ void pepx_getFASTAentry(char *iso, char *buf, FILE *infile, int *PEFFvarcnt)
     }
     else // trembl or any custom fasta
     {
-        strncpy(iso, buf + 4, 15);
+        strncpy(iso, buf + 5, 14);
         if(ptr=strchr(iso, '|')) // first assume pipe separator
           *ptr=0;
         else
@@ -1312,14 +1310,14 @@ void pepx_build(char *seqfilename)
             pepx_getFASTAentry(currISO, buf, in, &PEFFvarcnt); // TODO: implement PEFFvarcnt
         else // Parsing from prerelease data
         {
-            strncpy(currISO, buf + 3, 12); // get rid of NX_
+            strncpy(currISO, buf+4, 12); // get rid of NX_
             if(strchr(currISO, '\t'))
                 *strchr(currISO, '\t') = 0;
             if(strchr(currISO, ' '))
                 *strchr(currISO, ' ') = 0;
         }
 
-        if(strlen(currISO) > 10 && !strncmp(currISO, "A0A", 3))
+        if(strlen(currISO) > 10 && (!strncmp(currISO, "A0A0", 4) || !strncmp(currISO, "A0A1", 4)  || !strncmp(currISO, "A0A2", 4)))
             // 10 digit AC, trick it and remember only significant digits in a unique 6-digit length format (there is no real AC starting with P[A-Z]
             // eg: A0A087WTH1 -> PAWTH1
         {
@@ -1336,8 +1334,9 @@ void pepx_build(char *seqfilename)
             //fprintf(stderr,"%s\n",shortenedAC);
         }
 
-        strncpy(currAC, currISO, 6);
-        currAC[6] = 0;
+        strncpy(currAC, currISO, 12);
+        currAC[12] = 0;
+		//printf(currAC);
         //if(seqcnt > 30000)      fprintf(stderr,"%s\n",currISO); //debug=TRUE;
         if(FASTAinput)
             strcpy(masterseq, buf);
@@ -1417,12 +1416,11 @@ void  printHelp(char *mode)
 // ---------------- main ---------------------
 int main(int argc, char **argv)
 {
-    char *ptr, *peptoken, seqfname[LINELEN] = "", command[LINELEN], querystring[MAXQUERYLENGTH];
+    char *ptr, *peptoken, seqfname[LINELEN] = "", command[LINELEN], querystring[8192];
     char query[8192], pepfname[LINELEN] = "";
     int i, c;
     int option_index = 0; // getopt_long stores the option index here.
     FILE *inputstream = stdin;
-    char body[MAXQUERYLENGTH];
 
     static struct option long_options[] =
     {
@@ -1442,6 +1440,7 @@ int main(int argc, char **argv)
     };
     // Further improvements: Rewrite the code in scala to take advantage of powerful hashmap-like data structures
     // Consider indexing non-snp variants (alleles...)
+
     if(argc < 2)
     {
         if((ptr = getenv("QUERY_STRING")) == NULL)
@@ -1451,9 +1450,6 @@ int main(int argc, char **argv)
             fprintf(stderr, "type pepx -h for full documentation\n\n");
             exit(1);
         }
-	//strcpy(querystring, ptr + 4);
-	//printf("QS %s", querystring);	
-
         // for web cgi
         strcpy(envstring, ptr);
         fprintf(stdout, "Content-type: text/html\n\n");
@@ -1461,7 +1457,7 @@ int main(int argc, char **argv)
         {
             strcpy(command, "search");
             strcpy(querystring, ptr + 4);
-	    strcpy(linesep, "<br>");
+            strcpy(linesep, "<br>");
             if(ptr = strstr(envstring, "=noiso"))
                 // output matches at the entry level
                 strcpy(matchmode, "ACONLY");
@@ -1474,29 +1470,15 @@ int main(int argc, char **argv)
         }
         else
         {
-	    char* clstr;
-	    clstr = getenv("CONTENT_LENGTH");
-      	    long content_length;
-	    if(clstr == NULL || sscanf(clstr,"%ld",&content_length)!=1){
-  		printf("Bad Request\n");
-		exit(0);
-	    }	 
-            fgets(envstring,content_length+1, stdin);    
-	    if(ptr = strstr(envstring, "=json"))
-                json = 1;
-
-	    char* pepptr = strstr(envstring, "pep=");
-	    strcpy(querystring, pepptr + 4);	
-	    strcpy(envstring, querystring);
-	    IL_merge = 1;
-	    strcpy(command, "search");
-            strcpy(linesep, "<br>");
+            fprintf(stdout, "envstring: %s\n", envstring);
+            fprintf(stdout, "No valid arguments...\n");
+            exit(0);
         }
     }
     else
         // non-web usage: parse command arguments
     {
-	//while((c = getopt_long (argc, argv, "snhvb:p:f:w:r:x:", long_options, &option_index)) != -1)
+        //while((c = getopt_long (argc, argv, "snhvb:p:f:w:r:x:", long_options, &option_index)) != -1)
         while((c = getopt_long (argc, argv, "snhvb:p:f:w:x:", long_options, &option_index)) != -1)
         {
             switch (c)
@@ -1579,17 +1561,17 @@ int main(int argc, char **argv)
     }
     else if(!strncmp(command, "search", 6))
     {
-	if(optind < argc)
+        if(optind < argc)
             strcpy(querystring, argv[optind]);
         else if(strlen(envstring) == 0)
             strcpy(querystring, "BATCH");
-	if(!json)
+        if(!json)
             printf("Searching for %s, indexes at %s\n", querystring, indexfolder);
         //exit(0);
-	pepx_loadall();
-	if(!strcmp(querystring, "INTERACTIVE") || !strcmp(querystring, "BATCH"))
+        pepx_loadall();
+        if(!strcmp(querystring, "INTERACTIVE") || !strcmp(querystring, "BATCH"))
         {
-   	    strcpy(outputmode, querystring);
+            strcpy(outputmode, querystring);
             printHelp("");
             do
             {
@@ -1634,3 +1616,4 @@ int main(int argc, char **argv)
     }
     return(0);
 }
+
